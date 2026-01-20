@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI Coding Mentor</title>
+</head>
+<body>
+  <h2>AI Coding Mentor</h2>
+
+  <div id="chat-box">
+    <% messages.forEach(m => { %>
+      <p><b><%= m.sender %>:</b> <%= m.message_text %></p>
+    <% }) %>
+  </div>
+
+  <form method="POST" action="/chat">
+    <input type="hidden" name="conversation_id" value="<%= conversation_id %>" />
+    <input type="text" name="message" placeholder="Ask something..." required />
+    <button type="submit">Send</button>
+  </form>
+</body>
+</html>
