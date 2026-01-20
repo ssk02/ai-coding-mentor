@@ -9,6 +9,7 @@ app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static("public"));
 
 app.use(cors());
 app.use(express.json());
@@ -19,6 +20,7 @@ app.use(express.json());
 
 app.use("/api/auth", require("./routes/auth.routes"));
 app.use("/api/chat", require("./routes/chat.routes"));
+app.use("/api/history", require("./routes/history.routes"));
 app.use("/", require("./routes/view.routes"));
 
 module.exports = app;

@@ -2,20 +2,29 @@
 <html>
 <head>
   <title>AI Coding Mentor</title>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <h2>AI Coding Mentor</h2>
+  <div class="container">
+    <h2>AI Coding Mentor</h2>
 
-  <div id="chat-box">
-    <% messages.forEach(m => { %>
-      <p><b><%= m.sender %>:</b> <%= m.message_text %></p>
-    <% }) %>
+    <div class="chat-box">
+      <% messages.forEach(m => { %>
+        <p class="<%= m.sender %>">
+          <b><%= m.sender %>:</b> <%= m.message_text %>
+        </p>
+      <% }) %>
+    </div>
+
+    <form method="POST" action="/chat">
+      <input type="hidden" name="conversation_id" value="<%= conversation_id %>" />
+      <input type="text" name="message" placeholder="Ask something..." required />
+      <button type="submit">Send</button>
+    </form>
+
+    <form method="POST" action="/logout" style="margin-top:10px;">
+      <button type="submit" style="background:#dc2626;">Logout</button>
+    </form>
   </div>
-
-  <form method="POST" action="/chat">
-    <input type="hidden" name="conversation_id" value="<%= conversation_id %>" />
-    <input type="text" name="message" placeholder="Ask something..." required />
-    <button type="submit">Send</button>
-  </form>
 </body>
 </html>
