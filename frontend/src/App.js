@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Chat from "./pages/Chat";
+import ProtectedRoute from "./components/ProtectedRoute";
 import { setAuthToken } from "./services/api";
 
 const token = localStorage.getItem("token");
@@ -13,7 +14,11 @@ function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/chat" element={<Chat />} />
+        <Route path="/chat" element={
+          <ProtectedRoute>
+            <Chat />
+            </ProtectedRoute>
+          } />
       </Routes>
     </BrowserRouter>
   );

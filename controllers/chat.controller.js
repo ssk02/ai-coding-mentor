@@ -1,35 +1,57 @@
 const pool = require("../config/db");
 const aiService = require("../services/ai.service");
 
+
+// 🔹 Title generator function
+const generateTitle = (message) => {
+  if (!message) return "New Conversation";
+
+  return message
+    .substring(0, 40)     // limit length
+    .replace(/\n/g, " ")  // remove line breaks
+    .trim();
+};
+
+
 exports.ask = async (req, res) => {
   try {
     const { message, conversation_id } = req.body;
     const userId = req.user.user_id;
 
     if (!message) {
-      return res.status(400).json({ message: "Message is required" });
+      return res
+        .status(400)
+        .json({ message: "Message is required" });
     }
 
     // 1️⃣ Create new conversation if not provided
     let convoId = conversation_id;
 
     if (!convoId) {
+      const title = generateTitle(message);
+
       const [result] = await pool.execute(
-        "INSERT INTO conversations (user_id, title) VALUES (?, ?)",
-        [userId, message.substring(0, 50)]
+        `INSERT INTO conversations (user_id, title)
+         VALUES (?, ?)`,
+        [userId, title]
       );
+
       convoId = result.insertId;
     }
 
     // 2️⃣ Save user message
     await pool.execute(
-      "INSERT INTO messages (conversation_id, sender, message_text) VALUES (?, 'user', ?)",
+      `INSERT INTO messages
+       (conversation_id, sender, message_text)
+       VALUES (?, 'user', ?)`,
       [convoId, message]
     );
 
     // 3️⃣ Fetch user preferences
     const [[user]] = await pool.execute(
-      "SELECT skill_level, preferred_language FROM users WHERE user_id = ?",
+      `SELECT skill_level, preferred_language
+       FROM users
+       WHERE user_id = ?`,
       [userId]
     );
 
@@ -42,7 +64,9 @@ exports.ask = async (req, res) => {
 
     // 5️⃣ Save AI reply
     await pool.execute(
-      "INSERT INTO messages (conversation_id, sender, message_text) VALUES (?, 'assistant', ?)",
+      `INSERT INTO messages
+       (conversation_id, sender, message_text)
+       VALUES (?, 'assistant', ?)`,
       [convoId, aiReply]
     );
 
@@ -54,6 +78,8 @@ exports.ask = async (req, res) => {
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Conversation error" });
+    res.status(500).json({
+      message: "Conversation error"
+    });
   }
 };
