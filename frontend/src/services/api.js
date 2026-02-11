@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: "http://localhost:5000/api"
+  baseURL: "https://ai-coding-mentor-c5zq.onrender.com/api"
 });
 
 export const setAuthToken = (token) => {
