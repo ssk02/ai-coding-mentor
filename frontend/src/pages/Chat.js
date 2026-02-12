@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import API from "../services/api";
 
 function Chat() {
@@ -6,216 +6,298 @@ function Chat() {
   const [chat, setChat] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [activeConvo, setActiveConvo] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] =
+    useState(false);
 
-  // 🔹 Auto-scroll ref
   const chatEndRef = useRef(null);
-
-  // 🔹 Auto-scroll effect
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({
-      behavior: "smooth"
-    });
-  }, [chat]);
-
-  // 🔹 Load conversation list
-  const fetchConversations = async () => {
-    const res = await API.get("/history");
-    setConversations(res.data);
-  };
 
   useEffect(() => {
     fetchConversations();
   }, []);
 
-  // 🔹 Send message
-  const sendMessage = async () => {
-    if (!message.trim()) return;
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chat]);
 
-    const res = await API.post("/chat", {
-      message,
-      conversation_id: activeConvo
-    });
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 768) {
+        setIsSidebarOpen(false);
+      }
+    };
 
-    setActiveConvo(res.data.conversation_id);
+    window.addEventListener("resize", handleResize);
+    return () =>
+      window.removeEventListener(
+        "resize",
+        handleResize
+      );
+  }, []);
 
-    setChat([
-      ...chat,
-      { sender: "user", text: message },
-      { sender: "assistant", text: res.data.reply }
-    ]);
-
-    setMessage("");
+  const fetchConversations = async () => {
+    const res = await API.get("/history");
+    setConversations(res.data);
   };
 
-  // 🔹 Load conversation history
+  const getTypingDelay = (char) => {
+    if (char === " ") return 15;
+    if (/[.,!?]/.test(char)) return 80;
+    return 25;
+  };
+
+  const typeAssistantReply = async (fullText) => {
+    setChat((prev) => [
+      ...prev,
+      { sender: "assistant", text: "" }
+    ]);
+
+    for (let i = 0; i < fullText.length; i += 1) {
+      const nextText = fullText.slice(0, i + 1);
+      const delay = getTypingDelay(fullText[i]);
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, delay)
+      );
+
+      setChat((prev) => {
+        if (prev.length === 0) return prev;
+
+        const next = [...prev];
+        const lastIndex = next.length - 1;
+
+        if (
+          next[lastIndex].sender === "assistant"
+        ) {
+          next[lastIndex] = {
+            ...next[lastIndex],
+            text: nextText
+          };
+        }
+
+        return next;
+      });
+    }
+  };
+
   const loadConversation = async (id) => {
     setActiveConvo(id);
-
     const res = await API.get(`/history/${id}`);
-
     setChat(
       res.data.map((m) => ({
         sender: m.sender,
         text: m.message_text
       }))
     );
-  };
-
-  // 🔹 Delete conversation
-  const deleteConversation = async (id) => {
-    await API.delete(`/history/${id}`);
-
-    // Refresh sidebar
-    fetchConversations();
-
-    // Clear chat if active convo deleted
-    if (activeConvo === id) {
-      setChat([]);
-      setActiveConvo(null);
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
     }
   };
 
-  // 🔹 Logout
+  const sendMessage = async () => {
+    if (!message.trim() || isLoading) return;
+
+    const userText = message.trim();
+    setMessage("");
+    setIsLoading(true);
+    setChat((prev) => [
+      ...prev,
+      { sender: "user", text: userText }
+    ]);
+
+    try {
+      const res = await API.post("/chat", {
+        message: userText,
+        conversation_id: activeConvo
+      });
+
+      setActiveConvo(res.data.conversation_id);
+      await typeAssistantReply(res.data.reply);
+
+      fetchConversations();
+    } catch (error) {
+      setChat((prev) => [
+        ...prev,
+        {
+          sender: "assistant",
+          text: "Sorry, I could not generate a reply."
+        }
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem("token");
     window.location.href = "/";
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
-
-      {/* Sidebar */}
+    <div className="chat-layout">
+      {isSidebarOpen && (
+        <div
+          className="chat-overlay"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
       <div
+        className={`chat-sidebar ${
+          isSidebarOpen ? "open" : ""
+        }`}
         style={{
-          width: "25%",
-          borderRight: "1px solid #ccc",
-          padding: 10,
-          overflowY: "auto"
+          minWidth: 260
         }}
       >
-        <h3>Conversations</h3>
+        <h3 className="chat-sidebar-title">
+          Conversations
+        </h3>
 
-        {conversations.map((c) => (
-          <div
-            key={c.conversation_id}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: 6,
-              background:
-                activeConvo === c.conversation_id
-                  ? "#e5e5ea"
-                  : "transparent"
-            }}
-          >
-            <span
-              onClick={() =>
-                loadConversation(c.conversation_id)
-              }
-              style={{ cursor: "pointer" }}
-            >
-              {c.title ||
-                `Conversation ${c.conversation_id}`}
-            </span>
-
-            <button
-              onClick={() =>
-                deleteConversation(
-                  c.conversation_id
-                )
-              }
+        <div className="chat-conversation-list">
+          {conversations.map((c) => (
+            <div
+              key={c.conversation_id}
+              onClick={() => loadConversation(c.conversation_id)}
               style={{
-                background: "red",
-                color: "white",
-                border: "none",
+                padding: 10,
+                marginBottom: 8,
+                borderRadius: 6,
                 cursor: "pointer",
-                padding: "2px 6px"
+                background:
+                  activeConvo === c.conversation_id ? "#374151" : "transparent"
               }}
             >
-              X
-            </button>
-          </div>
-        ))}
+              {c.title || `Conversation ${c.conversation_id}`}
+            </div>
+          ))}
+        </div>
 
         <button
           onClick={logout}
-          style={{ marginTop: 10 }}
+          style={{
+            marginTop: 12,
+            padding: 10,
+            background: "#ef4444",
+            border: "none",
+            color: "#fff",
+            borderRadius: 6,
+            cursor: "pointer"
+          }}
         >
           Logout
         </button>
       </div>
 
-      {/* Chat Area */}
-      <div style={{ width: "75%", padding: 10 }}>
-        <h2>AI Coding Mentor</h2>
-
-        {/* Scrollable Chat Box */}
-        <div
-          style={{
-            height: "400px",
-            overflowY: "auto",
-            border: "1px solid #ccc",
-            padding: 10,
-            marginBottom: 10,
-            background: "#f9f9f9"
-          }}
-        >
-          {chat.map((m, i) => (
-            <div
-              key={i}
-              style={{
-                textAlign:
-                  m.sender === "user"
-                    ? "right"
-                    : "left",
-                margin: "8px 0"
-              }}
-            >
-              <span
-                style={{
-                  display: "inline-block",
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  background:
-                    m.sender === "user"
-                      ? "#007bff"
-                      : "#e5e5ea",
-                  color:
-                    m.sender === "user"
-                      ? "#fff"
-                      : "#000",
-                  maxWidth: "70%"
-                }}
-              >
-                {m.text}
-              </span>
-            </div>
-          ))}
-
-          {/* Auto-scroll anchor */}
-          <div ref={chatEndRef}></div>
+      <div className="chat-main">
+        <div className="chat-main-header">
+          <button
+            className="chat-menu-btn"
+            onClick={() =>
+              setIsSidebarOpen((prev) => !prev)
+            }
+          >
+            Menu
+          </button>
+          <h2>AI Coding Mentor</h2>
         </div>
 
-        {/* Input Area */}
-        <input
-          value={message}
-          onChange={(e) =>
-            setMessage(e.target.value)
-          }
-          placeholder="Ask something..."
-          style={{ width: "80%", padding: 8 }}
-        />
+        <div className="chat-box">
+          {chat.map((m, i) => {
+            const isUser = m.sender === "user";
 
-        <button
-          onClick={sendMessage}
-          style={{
-            padding: 8,
-            marginLeft: 5
-          }}
-        >
-          Send
-        </button>
+            return (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  justifyContent: isUser
+                    ? "flex-end"
+                    : "flex-start",
+                  marginBottom: 10
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: isUser
+                      ? "row-reverse"
+                      : "row",
+                    alignItems: "flex-end",
+                    gap: 8,
+                    maxWidth: "80%"
+                  }}
+                >
+                  <img
+                    src={
+                      isUser
+                        ? "https://api.dicebear.com/7.x/initials/svg?seed=User"
+                        : "https://api.dicebear.com/7.x/bottts/svg?seed=Mentor"
+                    }
+                    alt={
+                      isUser
+                        ? "User avatar"
+                        : "AI avatar"
+                    }
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "50%",
+                      objectFit: "cover",
+                      flexShrink: 0
+                    }}
+                  />
+
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 12,
+                      background: isUser
+                        ? "#2563eb"
+                        : "#e5e7eb",
+                      color: isUser ? "#fff" : "#000",
+                      maxWidth: "70%",
+                      wordBreak: "break-word"
+                    }}
+                  >
+                    {m.text}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          <div ref={chatEndRef} />
+        </div>
+
+        <div className="chat-input-bar">
+          <input
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") sendMessage();
+            }}
+            placeholder="Ask something..."
+            style={{
+              padding: 12,
+              borderRadius: 8,
+              border: "1px solid #ccc"
+            }}
+          />
+
+          <button
+            onClick={sendMessage}
+            disabled={isLoading}
+            style={{
+              padding: "12px 18px",
+              background: isLoading ? "#93c5fd" : "#2563eb",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              cursor: isLoading ? "not-allowed" : "pointer"
+            }}
+          >
+            {isLoading ? "Sending..." : "Send"}
+          </button>
+        </div>
       </div>
     </div>
   );
