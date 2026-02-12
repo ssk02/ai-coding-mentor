@@ -1,12 +1,8 @@
 const OpenAI = require("openai");
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
-
 exports.askMentor = async ({ prompt, skill_level, language }) => {
 
-  // 🔁 MOCK MODE (NO BILLING)
+  // 🔁 MOCK MODE — NO API KEY NEEDED
   if (process.env.AI_MODE === "mock") {
     return `
 👨‍🏫 Mock AI Coding Mentor Response
@@ -31,10 +27,13 @@ Write a program to find the sum of elements in an array.
 `;
   }
 
-  // 🔥 REAL AI MODE (when billing is enabled)
+  // 🔥 REAL AI MODE — Client created ONLY here
+  const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+  });
+
   const systemPrompt = `
 You are a senior software engineer and coding mentor.
-
 User skill level: ${skill_level}
 Preferred programming language: ${language}
 
