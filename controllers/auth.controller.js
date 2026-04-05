@@ -5,14 +5,17 @@ const jwt = require("jsonwebtoken");
 exports.register = async (req, res) => {
     try {
         const { full_name, email, password, skill_level, preferred_language } = req.body;
+        const normalizedName = full_name?.trim();
+        const normalizedEmail = email?.trim().toLowerCase();
+        const normalizedLanguage = preferred_language?.trim();
 
-        if (!full_name || !email || !password || !preferred_language) {
+        if (!normalizedName || !normalizedEmail || !password || !normalizedLanguage) {
             return res.status(400).json({ error: "Missing required fields" });
         }
 
         const [existing] = await pool.execute(
             "SELECT user_id FROM users WHERE email = ?",
-            [email]
+            [normalizedEmail]
         );
 
         if (existing.length) {
@@ -26,11 +29,11 @@ exports.register = async (req, res) => {
              (full_name, email, password_hash, skill_level, preferred_language) 
              VALUES (?, ?, ?, ?, ?)`,
             [
-                full_name,
-                email,
+                normalizedName,
+                normalizedEmail,
                 hashedPassword,
                 skill_level || "beginner",
-                preferred_language
+                normalizedLanguage
             ]
         );
 
@@ -45,14 +48,15 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
+        const normalizedEmail = email?.trim().toLowerCase();
 
-        if (!email || !password) {
+        if (!normalizedEmail || !password) {
             return res.status(400).json({ error: "Missing credentials" });
         }
 
         const [users] = await pool.execute(
             "SELECT * FROM users WHERE email = ?",
-            [email]
+            [normalizedEmail]
         );
 
         if (!users.length) {

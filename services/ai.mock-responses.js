@@ -312,7 +312,7 @@ ${code}
 ${skillData.practice}
 
 ---
-*This is a mock response for development/testing. In production, you'll get responses from OpenAI GPT-4o.*`;
+*This is a mock response for development/testing. In live mode, you'll get responses from the configured AI provider.*`;
 }
 
 /**

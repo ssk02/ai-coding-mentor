@@ -38,14 +38,21 @@ function Register() {
     setIsLoading(true);
 
     try {
-      await API.post("/auth/register", form);
+      await API.post("/auth/register", {
+        ...form,
+        full_name: form.full_name.trim(),
+        email: form.email.trim().toLowerCase(),
+        preferred_language: form.preferred_language.trim()
+      });
       setSuccess("Registered successfully. Redirecting to login...");
 
       setTimeout(() => {
         navigate("/");
       }, 800);
-    } catch {
-      setError("Registration failed. Please try again.");
+    } catch (err) {
+      setError(
+        err.response?.data?.error || "Registration failed. Please try again."
+      );
     } finally {
       setIsLoading(false);
     }

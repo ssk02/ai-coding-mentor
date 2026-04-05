@@ -146,3 +146,17 @@ exports.ask = async (req, res) => {
     });
   }
 };
+
+exports.getMeta = (req, res) => {
+  try {
+    res.json({
+      runtime: aiService.getRuntimeInfo(),
+      usage: aiService.getUsageStats()
+    });
+  } catch (err) {
+    console.error("Failed to fetch AI runtime metadata:", err);
+    res.status(500).json({
+      error: "Failed to fetch AI runtime metadata."
+    });
+  }
+};

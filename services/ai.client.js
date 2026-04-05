@@ -1,66 +1,73 @@
 /**
- * Singleton OpenAI Client - Reuse single client instance across all requests
- * Improves efficiency and reduces object allocation
+ * AI Client Facade - Provides unified interface for different AI providers
+ * Delegates to appropriate provider (OpenAI, Gemini, etc.) based on AI_PROVIDER env var
  */
 
-const OpenAI = require("openai");
+const providerRegistry = require("./ai.providers");
 
-let clientInstance = null;
-let isInitialized = false;
-
+/**
+ * Initialize the selected AI provider client
+ */
 function initializeClient() {
-  if (isInitialized) return clientInstance;
-
-  // Skip initialization for mock mode
-  if (process.env.AI_MODE === "mock") {
-    isInitialized = true;
-    console.log("ℹ️  Skipping OpenAI client init (mock mode)");
-    return null;
-  }
-
-  if (!process.env.OPENAI_API_KEY) {
-    console.error("❌ OPENAI_API_KEY not set in .env");
-    throw new Error("OpenAI API key not configured");
-  }
-
   try {
-    clientInstance = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    });
-    isInitialized = true;
-    console.log("✅ OpenAI client initialized (singleton)");
-    return clientInstance;
+    const provider = providerRegistry.getProviderName();
+    providerRegistry.initializeProvider();
+    console.log(`✅ ${provider.toUpperCase()} client initialized`);
+    return providerRegistry.getClient();
   } catch (err) {
-    console.error("❌ Failed to initialize OpenAI client:", err.message);
+    console.error("❌ Failed to initialize AI client:", err.message);
     throw err;
   }
 }
 
+/**
+ * Get the client for the currently selected provider
+ */
 function getClient() {
-  if (!isInitialized) {
-    initializeClient();
-  }
-  return clientInstance;
+  return providerRegistry.getClient();
 }
 
 /**
- * Check if client is properly initialized
+ * Check if client is properly initialized and ready
  */
 function isReady() {
-  return isInitialized && clientInstance !== null;
+  return providerRegistry.isReady();
 }
 
 /**
- * Reset client (for testing)
+ * Reset client (primarily for testing)
  */
 function reset() {
-  clientInstance = null;
-  isInitialized = false;
+  providerRegistry.reset();
+}
+
+/**
+ * Get the current provider name
+ */
+function getProviderName() {
+  return providerRegistry.getProviderName();
+}
+
+/**
+ * Get default model for current provider
+ */
+function getDefaultModel() {
+  return providerRegistry.getDefaultModel();
+}
+
+/**
+ * Get fallback model for current provider
+ */
+function getFallbackModel() {
+  return providerRegistry.getFallbackModel();
 }
 
 module.exports = {
   initializeClient,
   getClient,
   isReady,
-  reset
+  reset,
+  getProviderName,
+  getDefaultModel,
+  getFallbackModel
 };

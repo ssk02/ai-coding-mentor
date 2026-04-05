@@ -21,7 +21,7 @@ function Login() {
 
     try {
       const response = await API.post("/auth/login", {
-        email,
+        email: email.trim().toLowerCase(),
         password
       });
 
@@ -30,8 +30,8 @@ function Login() {
       localStorage.setItem("token", token);
       setAuthToken(token);
       navigate("/chat");
-    } catch {
-      setError("Invalid email or password.");
+    } catch (err) {
+      setError(err.response?.data?.error || "Login failed. Please try again.");
     } finally {
       setIsLoading(false);
     }

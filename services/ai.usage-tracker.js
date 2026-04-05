@@ -1,22 +1,8 @@
 /**
- * Usage Tracking - Log token usage and estimated costs
+ * Usage Tracking - Log token usage and estimated costs across providers
  */
 
-// OpenAI pricing per 1K tokens (as of 2024)
-const PRICING = {
-  "gpt-4o-mini": {
-    input: 0.00015,    // $0.15 per 1M input tokens
-    output: 0.0006     // $0.60 per 1M output tokens
-  },
-  "gpt-4o": {
-    input: 0.005,      // $5 per 1M input tokens
-    output: 0.015      // $15 per 1M output tokens
-  },
-  "gpt-3.5-turbo": {
-    input: 0.0005,     // $0.50 per 1M input tokens
-    output: 0.0015     // $1.50 per 1M output tokens
-  }
-};
+const providerUtils = require("./ai.providers/utils");
 
 class UsageTracker {
   constructor() {
@@ -26,30 +12,38 @@ class UsageTracker {
       totalCost: 0,
       requestCount: 0,
       errorCount: 0,
-      modelUsage: {} // model -> { tokens, cost, count }
+      modelUsage: {}, // model -> { tokens, cost, count }
+      providerUsage: {} // provider -> { tokens, cost, count, models[] }
     };
   }
 
   /**
    * Track a successful API call
+   * @param {string} conversationId - Conversation ID
+   * @param {string} model - Model name
+   * @param {object} usage - Token usage { prompt_tokens, completion_tokens }
+   * @param {string} provider - Provider name (openai, gemini, etc.)
    */
-  trackUsage(conversationId, model, usage) {
+  trackUsage(conversationId, model, usage, provider = "openai") {
     if (!usage) return;
 
     const { prompt_tokens = 0, completion_tokens = 0 } = usage;
     const totalTokens = prompt_tokens + completion_tokens;
 
-    // Calculate cost
-    const pricing = PRICING[model] || PRICING["gpt-3.5-turbo"];
-    const cost = 
-      (prompt_tokens * pricing.input / 1000) + 
-      (completion_tokens * pricing.output / 1000);
+    // Calculate cost using provider utils
+    const cost = providerUtils.calculateCost(
+      provider,
+      model,
+      prompt_tokens,
+      completion_tokens
+    );
 
     // Track per conversation
     if (conversationId) {
       if (!this.sessions.has(conversationId)) {
         this.sessions.set(conversationId, {
           model,
+          provider,
           totalTokens: 0,
           totalCost: 0,
           requestCount: 0,
@@ -67,6 +61,7 @@ class UsageTracker {
     this.totalUsage.totalCost += cost;
     this.totalUsage.requestCount += 1;
 
+    // Track per model
     if (!this.totalUsage.modelUsage[model]) {
       this.totalUsage.modelUsage[model] = { tokens: 0, cost: 0, count: 0 };
     }
@@ -74,25 +69,59 @@ class UsageTracker {
     this.totalUsage.modelUsage[model].cost += cost;
     this.totalUsage.modelUsage[model].count += 1;
 
+    // Track per provider
+    if (!this.totalUsage.providerUsage[provider]) {
+      this.totalUsage.providerUsage[provider] = {
+        tokens: 0,
+        cost: 0,
+        count: 0,
+        models: []
+      };
+    }
+    this.totalUsage.providerUsage[provider].tokens += totalTokens;
+    this.totalUsage.providerUsage[provider].cost += cost;
+    this.totalUsage.providerUsage[provider].count += 1;
+
+    if (!this.totalUsage.providerUsage[provider].models.includes(model)) {
+      this.totalUsage.providerUsage[provider].models.push(model);
+    }
+
     // Log it
-    this._logUsage(conversationId, model, prompt_tokens, completion_tokens, cost);
+    this._logUsage(
+      conversationId,
+      model,
+      provider,
+      prompt_tokens,
+      completion_tokens,
+      cost
+    );
   }
 
   /**
    * Track an error
    */
-  trackError(conversationId, model, error) {
+  trackError(conversationId, model, error, provider = "openai") {
     this.totalUsage.errorCount += 1;
-    console.error(`[USAGE] Error in conversation ${conversationId} (${model}): ${error.message}`);
+    console.error(
+      `[USAGE] Error in conversation ${conversationId} (${provider}/${model}): ${error.message}`
+    );
   }
 
   /**
    * Log usage details
    */
-  _logUsage(conversationId, model, promptTokens, completionTokens, cost) {
+  _logUsage(
+    conversationId,
+    model,
+    provider,
+    promptTokens,
+    completionTokens,
+    cost
+  ) {
     const timestamp = new Date().toISOString();
+    const providerName = providerUtils.formatProviderName(provider);
     console.log(
-      `[USAGE] ${timestamp} | Conv: ${conversationId} | Model: ${model} | ` +
+      `[USAGE] ${timestamp} | Conv: ${conversationId} | Provider: ${providerName} | Model: ${model} | ` +
       `Tokens: ${promptTokens}+${completionTokens}=${promptTokens + completionTokens} | ` +
       `Cost: $${cost.toFixed(5)}`
     );
@@ -157,7 +186,8 @@ ${Object.entries(stats.modelUsage)
       totalCost: 0,
       requestCount: 0,
       errorCount: 0,
-      modelUsage: {}
+      modelUsage: {},
+      providerUsage: {}
     };
   }
 }

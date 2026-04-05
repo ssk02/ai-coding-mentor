@@ -566,6 +566,13 @@ select:focus-visible {
   font-weight: 600;
 }
 
+.chat-runtime-meta {
+  margin: 8px 0 0;
+  color: var(--text-soft);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
 .chat-menu-btn {
   display: none;
   border-radius: 999px;
@@ -589,10 +596,18 @@ select:focus-visible {
   gap: 4px;
 }
 
+.header-stat-wide {
+  min-width: 108px;
+}
+
 .header-stat-value {
   font-size: 1.25rem;
   font-weight: 700;
   color: var(--text);
+}
+
+.header-stat-value-compact {
+  font-size: 1.05rem;
 }
 
 .header-stat-label {

@@ -15,10 +15,14 @@ export const setAuthToken = (token) => {
 API.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid
+    const requestUrl = error.config?.url || "";
+    const isAuthRequest =
+      requestUrl.includes("/auth/login") || requestUrl.includes("/auth/register");
+
+    if (error.response?.status === 401 && !isAuthRequest) {
       localStorage.removeItem("token");
-      window.location.href = "/login";
+      delete API.defaults.headers.common["Authorization"];
+      window.location.href = "/";
     }
     return Promise.reject(error);
   }

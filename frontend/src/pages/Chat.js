@@ -43,6 +43,7 @@ function Chat() {
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
   const [conversations, setConversations] = useState([]);
+  const [runtimeInfo, setRuntimeInfo] = useState(null);
   const [activeConvo, setActiveConvo] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -65,6 +66,33 @@ function Chat() {
     activeConversation?.title ||
     (activeConvo ? `Conversation ${activeConvo}` : "Fresh Mentoring Session");
 
+  const providerLabel = runtimeInfo?.runtime?.provider
+    ? runtimeInfo.runtime.provider.toUpperCase()
+    : null;
+
+  const modelLabel = runtimeInfo?.runtime?.model || null;
+
+  const usageStats = runtimeInfo?.usage || null;
+
+  const formatCompactNumber = (value) => {
+    if (typeof value !== "number") return "--";
+    return new Intl.NumberFormat([], {
+      notation: value >= 1000 ? "compact" : "standard",
+      maximumFractionDigits: value >= 1000 ? 1 : 0
+    }).format(value);
+  };
+
+  const formatRuntimeSummary = () => {
+    if (!runtimeInfo?.runtime) {
+      return "Provider details unavailable";
+    }
+
+    const modeLabel = runtimeInfo.runtime.mode?.toUpperCase() || "UNKNOWN";
+    const providerSummary = providerLabel || "UNKNOWN";
+    const modelSummary = modelLabel || "Default model";
+    return `${modeLabel} via ${providerSummary} • ${modelSummary}`;
+  };
+
   useEffect(() => {
     let isMounted = true;
 
@@ -72,10 +100,19 @@ function Chat() {
       setIsFetchingConvos(true);
 
       try {
-        const response = await API.get("/history");
+        const [historyResponse, metaResponse] = await Promise.all([
+          API.get("/history"),
+          API.get("/chat/meta").catch(() => null)
+        ]);
         if (!isMounted) return;
 
-        const nextConversations = (response.data || []).map(toConversationSummary);
+        if (metaResponse?.data) {
+          setRuntimeInfo(metaResponse.data);
+        }
+
+        const nextConversations = (historyResponse.data || []).map(
+          toConversationSummary
+        );
         setConversations(nextConversations);
         setError(null);
 
@@ -158,6 +195,15 @@ function Chat() {
         ? preferredConversationId
         : nextConversations[0]?.conversation_id || null
     };
+  };
+
+  const refreshRuntimeInfo = async () => {
+    try {
+      const response = await API.get("/chat/meta");
+      setRuntimeInfo(response.data);
+    } catch (err) {
+      console.error("Failed to fetch AI runtime info:", err);
+    }
   };
 
   const getTypingDelay = (character) => {
@@ -340,6 +386,8 @@ function Chat() {
           preserveError: true
         });
       }
+
+      refreshRuntimeInfo();
     } catch (err) {
       if (activeSendRequestRef.current !== requestId) return;
 
@@ -366,6 +414,8 @@ function Chat() {
       } catch (refreshError) {
         console.error("Failed to refresh conversations:", refreshError);
       }
+
+      refreshRuntimeInfo();
     } finally {
       if (activeSendRequestRef.current === requestId) {
         setIsSending(false);
@@ -530,6 +580,7 @@ function Chat() {
             <div>
               <p className="eyebrow">Active thread</p>
               <h2>{activeTitle}</h2>
+              <p className="chat-runtime-meta">{formatRuntimeSummary()}</p>
             </div>
           </div>
 
@@ -541,6 +592,18 @@ function Chat() {
             <div className="header-stat">
               <span className="header-stat-value">{conversations.length}</span>
               <span className="header-stat-label">Threads</span>
+            </div>
+            <div className="header-stat">
+              <span className="header-stat-value">
+                {formatCompactNumber(usageStats?.requestCount)}
+              </span>
+              <span className="header-stat-label">AI Calls</span>
+            </div>
+            <div className="header-stat header-stat-wide">
+              <span className="header-stat-value header-stat-value-compact">
+                {formatCompactNumber(usageStats?.totalTokens)}
+              </span>
+              <span className="header-stat-label">Tokens Used</span>
             </div>
             <div className={`header-status ${isTyping ? "typing" : ""}`}>
               {isLoadingConversation

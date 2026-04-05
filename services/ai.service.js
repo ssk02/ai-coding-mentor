@@ -11,9 +11,9 @@ const { getInstance: getUsageTracker } = require("./ai.usage-tracker");
 const MOCK_MODE = process.env.AI_MODE === "mock";
 
 if (MOCK_MODE) {
-  console.log("ℹ️  Running in MOCK mode (AI_MODE=mock)");
+  console.log("Running in MOCK mode (AI_MODE=mock)");
 } else {
-  console.log("ℹ️  Running in LIVE mode - will use OpenAI API");
+  console.log("Running in LIVE mode - will use configured AI provider");
 }
 
 /**
@@ -30,12 +30,10 @@ exports.askMentor = async ({ prompt, skill_level, language, conversation_id }) =
   const usageTracker = getUsageTracker();
 
   try {
-    // Use mock mode if configured
     if (MOCK_MODE) {
       return generateMockResponse(prompt, skill_level, language, conversation_id);
     }
 
-    // Real API call
     return await generateRealResponse(
       prompt,
       skill_level,
@@ -45,12 +43,21 @@ exports.askMentor = async ({ prompt, skill_level, language, conversation_id }) =
       usageTracker
     );
   } catch (err) {
-    console.error("❌ AI Service error:", err.message);
-    usageTracker.trackError(conversation_id, "gpt-4o-mini", err);
+    console.error("AI Service error:", err.message);
+    usageTracker.trackError(
+      conversation_id,
+      process.env.LLM_MODEL || "unknown",
+      err,
+      MOCK_MODE ? "mock" : getLiveProviderName()
+    );
 
-    // Graceful fallback to mock on error
-    console.warn("⚠️  Falling back to mock response due to API error");
-    const fallbackResponse = generateMockResponse(prompt, skill_level, language, conversation_id);
+    console.warn("Falling back to mock response due to API error");
+    const fallbackResponse = generateMockResponse(
+      prompt,
+      skill_level,
+      language,
+      conversation_id
+    );
     return `[API ERROR - MOCK FALLBACK]\n\n${fallbackResponse}`;
   }
 };
@@ -59,22 +66,23 @@ exports.askMentor = async ({ prompt, skill_level, language, conversation_id }) =
  * Generate mock response with enhanced features
  */
 function generateMockResponse(prompt, skill_level, language, conversation_id) {
-  // Detect topic and language
   const topic = mockResponses.detectTopic(prompt);
   const detectedLanguage = mockResponses.detectLanguage(language, prompt);
 
-  // Simulate realistic delay
-  const delay = mockResponses.getRealisticDelay();
-
-  // Simulate error (if enabled)
-  if (mockResponses.shouldSimulateError(process.env.LLM_ERROR_SIMULATION === "true")) {
+  if (
+    mockResponses.shouldSimulateError(
+      process.env.LLM_ERROR_SIMULATION === "true"
+    )
+  ) {
     throw new Error("[MOCK ERROR SIMULATION] Simulated API failure for testing");
   }
 
-  // Generate response
-  const response = mockResponses.generateMockResponse(topic, skill_level, detectedLanguage);
+  const response = mockResponses.generateMockResponse(
+    topic,
+    skill_level,
+    detectedLanguage
+  );
 
-  // Track in context (for future conversation awareness)
   const contextTracker = getContextTracker();
   if (conversation_id) {
     contextTracker.addMessage(conversation_id, "assistant", response);
@@ -84,7 +92,8 @@ function generateMockResponse(prompt, skill_level, language, conversation_id) {
 }
 
 /**
- * Generate real response using OpenAI API with retry logic
+ * Generate real response using AI API with retry logic
+ * Supports multiple providers (OpenAI, Gemini, etc.) via provider abstraction
  */
 async function generateRealResponse(
   prompt,
@@ -94,26 +103,26 @@ async function generateRealResponse(
   contextTracker,
   usageTracker
 ) {
-  // Lazy-load live mode dependencies
-  const { getClient, initializeClient: initClient } = require("./ai.client");
+  const aiClient = require("./ai.client");
   const { withRetry, withFallback } = require("./ai.retry");
 
-  // Initialize client on first use
   try {
-    initClient();
+    aiClient.initializeClient();
   } catch (err) {
-    console.error("❌ Failed to initialize OpenAI client:", err.message);
+    console.error("Failed to initialize AI client:", err.message);
     throw err;
   }
 
-  const client = getClient();
+  const provider = aiClient.getProviderName();
+  const selectedProvider = require(`./ai.providers/${provider}`);
+  const client = aiClient.getClient();
+
   if (!client) {
-    throw new Error("OpenAI client not initialized");
+    throw new Error("AI client not initialized");
   }
 
-  const model = process.env.LLM_MODEL || "gpt-4o-mini";
-
-  // Build conversation context
+  const model = aiClient.getDefaultModel();
+  const fallbackModel = aiClient.getFallbackModel();
   const conversationContext = contextTracker.getContext(conversation_id);
   const contextSummary = contextTracker.getContextSummary(conversation_id);
 
@@ -130,56 +139,50 @@ Rules:
 - End with a short practice task
 - Keep responses concise (under 500 words)`;
 
-  // Build messages including conversation history
   const messages = conversationContext
     ? [...conversationContext, { role: "user", content: prompt }]
     : [{ role: "user", content: prompt }];
 
-  // Execute with retry logic, including fallback
+  const apiParams = {
+    model,
+    messages: [{ role: "system", content: systemPrompt }, ...messages],
+    max_tokens: 1000,
+    temperature: 0.7,
+    system_prompt: systemPrompt
+  };
+
   const response = await withFallback(
-    () =>
-      withRetry(() =>
-        client.chat.completions.create({
-          model: model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...messages
-          ],
-          max_tokens: 1000,
-          temperature: 0.7
-        })
-      ),
-    // Fallback: try cheaper model if primary fails
-    () =>
-      withRetry(() =>
-        client.chat.completions.create({
-          model: "gpt-3.5-turbo",
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...messages
-          ],
-          max_tokens: 1000,
-          temperature: 0.7
-        })
-      )
+    () => withRetry(() => selectedProvider.executeCall(apiParams)),
+    () => {
+      const fallbackParams = {
+        ...apiParams,
+        model: fallbackModel
+      };
+      return withRetry(() => selectedProvider.executeCall(fallbackParams));
+    }
   );
 
-  // Extract and track response
-  const content = response.choices[0]?.message?.content;
+  const parsedResponse = selectedProvider.parseResponse(response);
+  const content = parsedResponse.text;
+  const responseModel = parsedResponse.model || model;
+
   if (!content) {
-    throw new Error("Empty response from OpenAI API");
+    throw new Error(`Empty response from ${provider} API`);
   }
 
-  // Track usage
-  usageTracker.trackUsage(conversation_id, model, response.usage);
+  const usage = selectedProvider.extractUsage(response);
+  usageTracker.trackUsage(conversation_id, responseModel, usage, provider);
 
-  // Store in context for future messages
   if (conversation_id) {
     contextTracker.addMessage(conversation_id, "user", prompt);
     contextTracker.addMessage(conversation_id, "assistant", content);
   }
 
   return content;
+}
+
+function getLiveProviderName() {
+  return (process.env.AI_PROVIDER || "openai").toLowerCase();
 }
 
 /**
@@ -199,12 +202,25 @@ exports.getUsageReport = () => {
 };
 
 /**
+ * Get active AI runtime info for display/debugging
+ */
+exports.getRuntimeInfo = () => {
+  const aiClient = require("./ai.client");
+
+  return {
+    mode: MOCK_MODE ? "mock" : "live",
+    provider: getLiveProviderName(),
+    model: aiClient.getDefaultModel()
+  };
+};
+
+/**
  * Reset context for a conversation (start fresh)
  */
 exports.resetConversation = (conversation_id) => {
   const contextTracker = getContextTracker();
   contextTracker.clearContext(conversation_id);
-  console.log(`✅ Cleared context for conversation ${conversation_id}`);
+  console.log(`Cleared context for conversation ${conversation_id}`);
 };
 
 /**
