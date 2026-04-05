@@ -1,89 +1,6 @@
 import { useState } from "react";
-import API from "../services/api";
 import { Link, useNavigate } from "react-router-dom";
-
-const styles = {
-  wrapper: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    height: "100vh",
-    background: "#f4f6f8",
-    padding: "16px"
-  },
-  card: {
-    background: "#fff",
-    padding: "30px",
-    borderRadius: "12px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-    width: "100%",
-    maxWidth: "350px"
-  },
-  title: {
-    marginBottom: "20px",
-    textAlign: "center",
-    color: "#111827"
-  },
-  input: {
-    width: "100%",
-    padding: "12px",
-    marginBottom: "15px",
-    borderRadius: "8px",
-    border: "1px solid #d1d5db",
-    outline: "none",
-    fontSize: "14px"
-  },
-  select: {
-    width: "100%",
-    padding: "12px",
-    marginBottom: "15px",
-    borderRadius: "8px",
-    border: "1px solid #d1d5db",
-    outline: "none",
-    fontSize: "14px",
-    background: "#fff"
-  },
-  button: {
-    width: "100%",
-    padding: "12px",
-    background: "#2563eb",
-    color: "#fff",
-    border: "none",
-    borderRadius: "8px",
-    fontWeight: "bold",
-    cursor: "pointer"
-  },
-  buttonHover: {
-    background: "#1d4ed8"
-  },
-  buttonDisabled: {
-    background: "#93c5fd",
-    cursor: "not-allowed"
-  },
-  footerText: {
-    marginTop: "15px",
-    textAlign: "center",
-    fontSize: "14px"
-  },
-  link: {
-    color: "#2563eb",
-    textDecoration: "none"
-  },
-  errorBox: {
-    background: "#fee2e2",
-    color: "#991b1b",
-    padding: "10px",
-    borderRadius: "6px",
-    marginBottom: "15px"
-  },
-  successBox: {
-    background: "#dcfce7",
-    color: "#166534",
-    padding: "10px",
-    borderRadius: "6px",
-    marginBottom: "15px"
-  }
-};
+import API from "../services/api";
 
 function Register() {
   const [form, setForm] = useState({
@@ -96,9 +13,6 @@ function Register() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [hovered, setHovered] = useState(false);
-  const [focusedField, setFocusedField] = useState("");
-
   const navigate = useNavigate();
 
   const isFormValid =
@@ -107,15 +21,16 @@ function Register() {
     form.password.trim() &&
     form.preferred_language.trim();
 
-  const handleChange = (e) => {
-    setForm({
-      ...form,
-      [e.target.name]: e.target.value
-    });
+  const handleChange = (event) => {
+    setForm((current) => ({
+      ...current,
+      [event.target.name]: event.target.value
+    }));
   };
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
+  const handleRegister = async (event) => {
+    event.preventDefault();
+
     if (!isFormValid || isLoading) return;
 
     setError("");
@@ -125,6 +40,7 @@ function Register() {
     try {
       await API.post("/auth/register", form);
       setSuccess("Registered successfully. Redirecting to login...");
+
       setTimeout(() => {
         navigate("/");
       }, 800);
@@ -136,139 +52,126 @@ function Register() {
   };
 
   return (
-    <div style={styles.wrapper}>
-      <div style={styles.card}>
-        <h2 style={styles.title}>Create Account</h2>
+    <div className="app-shell app-shell-auth">
+      <div className="auth-backdrop" />
 
-        {error && <div style={styles.errorBox}>{error}</div>}
-        {success && <div style={styles.successBox}>{success}</div>}
+      <div className="auth-layout">
+        <section className="auth-hero">
+          <div>
+            <p className="eyebrow">Create your space</p>
+            <h1>Set up a mentor workspace that matches how you learn.</h1>
+            <p>
+              Choose your level, note your preferred language, and keep every
+              study session organized from day one.
+            </p>
+          </div>
 
-        <form onSubmit={handleRegister}>
-          <input
-            name="full_name"
-            placeholder="Full Name"
-            value={form.full_name}
-            onChange={handleChange}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleRegister(e);
-            }}
-            onFocus={() => setFocusedField("full_name")}
-            onBlur={() => setFocusedField("")}
-            required
-            style={{
-              ...styles.input,
-              borderColor:
-                focusedField === "full_name"
-                  ? "#2563eb"
-                  : "#d1d5db"
-            }}
-          />
+          <div className="auth-highlights">
+            <div className="auth-highlight">
+              <strong>Skill-aware support</strong>
+              <span>Beginner, intermediate, or advanced, the app can keep explanations on level.</span>
+            </div>
+            <div className="auth-highlight">
+              <strong>Topic-by-topic history</strong>
+              <span>Separate conversations make it easier to revisit debugging and theory later.</span>
+            </div>
+          </div>
+        </section>
 
-          <input
-            name="email"
-            type="email"
-            placeholder="Email"
-            value={form.email}
-            onChange={handleChange}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleRegister(e);
-            }}
-            onFocus={() => setFocusedField("email")}
-            onBlur={() => setFocusedField("")}
-            required
-            style={{
-              ...styles.input,
-              borderColor:
-                focusedField === "email"
-                  ? "#2563eb"
-                  : "#d1d5db"
-            }}
-          />
+        <section className="auth-card">
+          <div className="auth-card-header">
+            <p className="eyebrow">New account</p>
+            <h2>Register</h2>
+            <p>Tell the mentor a little about you before your first session.</p>
+          </div>
 
-          <input
-            name="password"
-            type="password"
-            placeholder="Password"
-            value={form.password}
-            onChange={handleChange}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleRegister(e);
-            }}
-            onFocus={() => setFocusedField("password")}
-            onBlur={() => setFocusedField("")}
-            required
-            style={{
-              ...styles.input,
-              borderColor:
-                focusedField === "password"
-                  ? "#2563eb"
-                  : "#d1d5db"
-            }}
-          />
+          <form className="auth-form" onSubmit={handleRegister}>
+            {error && <div className="feedback-banner error">{error}</div>}
+            {success && <div className="feedback-banner success">{success}</div>}
 
-          <select
-            name="skill_level"
-            value={form.skill_level}
-            onChange={handleChange}
-            onFocus={() => setFocusedField("skill_level")}
-            onBlur={() => setFocusedField("")}
-            style={{
-              ...styles.select,
-              borderColor:
-                focusedField === "skill_level"
-                  ? "#2563eb"
-                  : "#d1d5db"
-            }}
-          >
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-          </select>
+            <div className="auth-field">
+              <label htmlFor="register-name">Full name</label>
+              <input
+                id="register-name"
+                name="full_name"
+                className="auth-input"
+                placeholder="Your name"
+                value={form.full_name}
+                onChange={handleChange}
+                required
+              />
+            </div>
 
-          <input
-            name="preferred_language"
-            placeholder="Preferred Language"
-            value={form.preferred_language}
-            onChange={handleChange}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleRegister(e);
-            }}
-            onFocus={() => setFocusedField("preferred_language")}
-            onBlur={() => setFocusedField("")}
-            style={{
-              ...styles.input,
-              borderColor:
-                focusedField === "preferred_language"
-                  ? "#2563eb"
-                  : "#d1d5db"
-            }}
-          />
+            <div className="auth-field">
+              <label htmlFor="register-email">Email</label>
+              <input
+                id="register-email"
+                name="email"
+                type="email"
+                className="auth-input"
+                placeholder="you@example.com"
+                value={form.email}
+                onChange={handleChange}
+                required
+              />
+            </div>
 
-          <button
-            type="submit"
-            disabled={!isFormValid || isLoading}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-            style={{
-              ...styles.button,
-              ...(hovered && isFormValid && !isLoading
-                ? styles.buttonHover
-                : {}),
-              ...(!isFormValid || isLoading
-                ? styles.buttonDisabled
-                : {})
-            }}
-          >
-            {isLoading ? "Please wait..." : "Register"}
-          </button>
-        </form>
+            <div className="auth-field">
+              <label htmlFor="register-password">Password</label>
+              <input
+                id="register-password"
+                name="password"
+                type="password"
+                className="auth-input"
+                placeholder="Choose a password"
+                value={form.password}
+                onChange={handleChange}
+                required
+              />
+            </div>
 
-        <p style={styles.footerText}>
-          Already have an account? {" "}
-          <Link to="/" style={styles.link}>
-            Login
-          </Link>
-        </p>
+            <div className="auth-row">
+              <div className="auth-field">
+                <label htmlFor="register-skill-level">Skill level</label>
+                <select
+                  id="register-skill-level"
+                  name="skill_level"
+                  className="auth-select"
+                  value={form.skill_level}
+                  onChange={handleChange}
+                >
+                  <option value="beginner">Beginner</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                </select>
+              </div>
+
+              <div className="auth-field">
+                <label htmlFor="register-language">Preferred language</label>
+                <input
+                  id="register-language"
+                  name="preferred_language"
+                  className="auth-input"
+                  placeholder="Python"
+                  value={form.preferred_language}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="primary-button auth-submit"
+              disabled={!isFormValid || isLoading}
+            >
+              {isLoading ? "Creating account..." : "Register"}
+            </button>
+          </form>
+
+          <p className="auth-footer">
+            Already have an account? <Link to="/">Login</Link>
+          </p>
+        </section>
       </div>
     </div>
   );

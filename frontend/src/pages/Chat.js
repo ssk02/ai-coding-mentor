@@ -1,130 +1,377 @@
 import { useEffect, useRef, useState } from "react";
 import API from "../services/api";
 
+const starterPrompts = [
+  "Explain closures with a JavaScript example.",
+  "Help me debug a React state update issue.",
+  "Teach me arrays and loops like I am a beginner."
+];
+
+const toConversationSummary = (conversation) => ({
+  conversation_id: conversation.conversation_id,
+  title:
+    conversation.title?.trim() || `Conversation ${conversation.conversation_id}`,
+  updated_at: conversation.updated_at || null
+});
+
+const toChatMessage = (item) => ({
+  id:
+    item.message_id ||
+    item.id ||
+    `${item.sender}-${item.created_at || Math.random().toString(36).slice(2)}`,
+  sender: item.sender,
+  text: item.message_text ?? item.text ?? "",
+  created_at: item.created_at || null,
+  isError: Boolean(item.isError)
+});
+
+const formatTimestamp = (value) => {
+  if (!value) return "Just now";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Just now";
+
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+};
+
 function Chat() {
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [activeConvo, setActiveConvo] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] =
-    useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [error, setError] = useState(null);
+  const [isFetchingConvos, setIsFetchingConvos] = useState(false);
+  const [isLoadingConversation, setIsLoadingConversation] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
   const chatEndRef = useRef(null);
+  const textareaRef = useRef(null);
+  const activeLoadRequestRef = useRef(0);
+  const activeSendRequestRef = useRef(0);
+
+  const activeConversation = conversations.find(
+    (conversation) => conversation.conversation_id === activeConvo
+  );
+
+  const activeTitle =
+    activeConversation?.title ||
+    (activeConvo ? `Conversation ${activeConvo}` : "Fresh Mentoring Session");
 
   useEffect(() => {
-    fetchConversations();
+    let isMounted = true;
+
+    const initializeChat = async () => {
+      setIsFetchingConvos(true);
+
+      try {
+        const response = await API.get("/history");
+        if (!isMounted) return;
+
+        const nextConversations = (response.data || []).map(toConversationSummary);
+        setConversations(nextConversations);
+        setError(null);
+
+        if (nextConversations.length > 0) {
+          await loadConversation(nextConversations[0].conversation_id, {
+            closeSidebar: false
+          });
+        } else {
+          setActiveConvo(null);
+          setChat([]);
+        }
+      } catch (err) {
+        if (!isMounted) return;
+        console.error("Failed to fetch conversations:", err);
+        setError("Failed to load conversations. Please refresh the page.");
+      } finally {
+        if (isMounted) {
+          setIsFetchingConvos(false);
+        }
+      }
+    };
+
+    initializeChat();
+
+    return () => {
+      isMounted = false;
+      activeLoadRequestRef.current += 1;
+      activeSendRequestRef.current += 1;
+    };
   }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chat]);
+  }, [chat, isTyping]);
 
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth > 768) {
+      if (window.innerWidth > 920) {
+        setIsSidebarOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
         setIsSidebarOpen(false);
       }
     };
 
     window.addEventListener("resize", handleResize);
-    return () =>
-      window.removeEventListener(
-        "resize",
-        handleResize
-      );
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
 
-  const fetchConversations = async () => {
-    const res = await API.get("/history");
-    setConversations(res.data);
+  useEffect(() => {
+    if (!textareaRef.current) return;
+
+    textareaRef.current.style.height = "auto";
+    textareaRef.current.style.height = `${Math.min(
+      textareaRef.current.scrollHeight,
+      180
+    )}px`;
+  }, [message]);
+
+  const refreshConversations = async (preferredConversationId = activeConvo) => {
+    const response = await API.get("/history");
+    const nextConversations = (response.data || []).map(toConversationSummary);
+    setConversations(nextConversations);
+
+    const hasPreferredConversation = nextConversations.some(
+      (conversation) => conversation.conversation_id === preferredConversationId
+    );
+
+    return {
+      conversations: nextConversations,
+      nextActiveConversationId: hasPreferredConversation
+        ? preferredConversationId
+        : nextConversations[0]?.conversation_id || null
+    };
   };
 
-  const getTypingDelay = (char) => {
-    if (char === " ") return 15;
-    if (/[.,!?]/.test(char)) return 80;
+  const getTypingDelay = (character) => {
+    if (character === " ") return 15;
+    if (/[.,!?]/.test(character)) return 80;
     return 25;
   };
 
-  const typeAssistantReply = async (fullText) => {
-    setChat((prev) => [
-      ...prev,
-      { sender: "assistant", text: "" }
-    ]);
+  const typeAssistantReply = async (fullText, requestId) => {
+    setIsTyping(true);
 
-    for (let i = 0; i < fullText.length; i += 1) {
-      const nextText = fullText.slice(0, i + 1);
-      const delay = getTypingDelay(fullText[i]);
+    const tempAssistantId = `assistant-${requestId}`;
+    setChat((prev) => [...prev, { id: tempAssistantId, sender: "assistant", text: "" }]);
 
-      await new Promise((resolve) =>
-        setTimeout(resolve, delay)
+    for (let index = 0; index < fullText.length; index += 1) {
+      if (activeSendRequestRef.current !== requestId) {
+        setIsTyping(false);
+        return;
+      }
+
+      const nextText = fullText.slice(0, index + 1);
+      const delay = getTypingDelay(fullText[index]);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      if (activeSendRequestRef.current !== requestId) {
+        setIsTyping(false);
+        return;
+      }
+
+      setChat((prev) =>
+        prev.map((entry) =>
+          entry.id === tempAssistantId
+            ? { ...entry, text: nextText }
+            : entry
+        )
       );
+    }
 
-      setChat((prev) => {
-        if (prev.length === 0) return prev;
+    setIsTyping(false);
+  };
 
-        const next = [...prev];
-        const lastIndex = next.length - 1;
+  const loadConversation = async (
+    conversationId,
+    { closeSidebar = true, preserveError = false } = {}
+  ) => {
+    activeSendRequestRef.current += 1;
+    setIsSending(false);
+    setIsTyping(false);
 
-        if (
-          next[lastIndex].sender === "assistant"
-        ) {
-          next[lastIndex] = {
-            ...next[lastIndex],
-            text: nextText
-          };
-        }
+    const requestId = Date.now() + Math.random();
+    activeLoadRequestRef.current = requestId;
+    setIsLoadingConversation(true);
+    setActiveConvo(conversationId);
 
-        return next;
-      });
+    if (!preserveError) {
+      setError(null);
+    }
+
+    try {
+      const response = await API.get(`/history/${conversationId}`);
+
+      if (activeLoadRequestRef.current !== requestId) return;
+
+      setChat((response.data || []).map(toChatMessage));
+
+      if (closeSidebar && window.innerWidth <= 920) {
+        setIsSidebarOpen(false);
+      }
+    } catch (err) {
+      if (activeLoadRequestRef.current !== requestId) return;
+
+      console.error("Failed to load conversation:", err);
+      setError("Failed to load conversation. Please try again.");
+      setChat([]);
+    } finally {
+      if (activeLoadRequestRef.current === requestId) {
+        setIsLoadingConversation(false);
+      }
     }
   };
 
-  const loadConversation = async (id) => {
-    setActiveConvo(id);
-    const res = await API.get(`/history/${id}`);
-    setChat(
-      res.data.map((m) => ({
-        sender: m.sender,
-        text: m.message_text
-      }))
-    );
-    if (window.innerWidth <= 768) {
+  const startNewConversation = () => {
+    activeLoadRequestRef.current += 1;
+    activeSendRequestRef.current += 1;
+    setChat([]);
+    setActiveConvo(null);
+    setError(null);
+    setMessage("");
+    setIsSending(false);
+    setIsTyping(false);
+    setIsLoadingConversation(false);
+    setPendingDeleteId(null);
+    textareaRef.current?.focus();
+
+    if (window.innerWidth <= 920) {
       setIsSidebarOpen(false);
     }
   };
 
-  const sendMessage = async () => {
-    if (!message.trim() || isLoading) return;
+  const deleteConversation = async (conversationId) => {
+    const selectedConversation = conversations.find(
+      (conversation) => conversation.conversation_id === conversationId
+    );
+    const label = selectedConversation?.title || `Conversation ${conversationId}`;
 
-    const userText = message.trim();
-    setMessage("");
-    setIsLoading(true);
-    setChat((prev) => [
-      ...prev,
-      { sender: "user", text: userText }
-    ]);
+    if (!window.confirm(`Delete "${label}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    setPendingDeleteId(conversationId);
+    setError(null);
 
     try {
-      const res = await API.post("/chat", {
-        message: userText,
+      await API.delete(`/history/${conversationId}`);
+
+      const remainingConversations = conversations.filter(
+        (conversation) => conversation.conversation_id !== conversationId
+      );
+      setConversations(remainingConversations);
+
+      if (conversationId === activeConvo) {
+        const nextConversationId = remainingConversations[0]?.conversation_id || null;
+
+        if (nextConversationId) {
+          await loadConversation(nextConversationId);
+        } else {
+          startNewConversation();
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete conversation:", err);
+      setError("Unable to delete conversation. Please try again.");
+    } finally {
+      setPendingDeleteId(null);
+    }
+  };
+
+  const sendMessage = async (prefilledMessage) => {
+    const nextMessage = (prefilledMessage ?? message).trim();
+
+    if (!nextMessage || isSending) return;
+
+    const requestId = Date.now() + Math.random();
+    activeSendRequestRef.current = requestId;
+
+    const optimisticMessage = {
+      id: `user-${requestId}`,
+      sender: "user",
+      text: nextMessage,
+      created_at: new Date().toISOString()
+    };
+
+    setMessage("");
+    setIsSending(true);
+    setError(null);
+    setChat((prev) => [...prev, optimisticMessage]);
+
+    try {
+      const response = await API.post("/chat", {
+        message: nextMessage,
         conversation_id: activeConvo
       });
 
-      setActiveConvo(res.data.conversation_id);
-      await typeAssistantReply(res.data.reply);
+      if (activeSendRequestRef.current !== requestId) return;
 
-      fetchConversations();
-    } catch (error) {
+      const responseConversationId = response.data.conversation_id;
+      setActiveConvo(responseConversationId);
+
+      await typeAssistantReply(response.data.reply, requestId);
+
+      if (activeSendRequestRef.current !== requestId) return;
+
+      const { nextActiveConversationId } = await refreshConversations(
+        responseConversationId
+      );
+
+      if (nextActiveConversationId) {
+        await loadConversation(nextActiveConversationId, {
+          closeSidebar: false,
+          preserveError: true
+        });
+      }
+    } catch (err) {
+      if (activeSendRequestRef.current !== requestId) return;
+
+      console.error("Chat error:", err);
+
+      const errorMessage =
+        err.response?.data?.error ||
+        err.message ||
+        "Sorry, I could not generate a reply. Please try again.";
+
       setChat((prev) => [
         ...prev,
         {
+          id: `assistant-error-${requestId}`,
           sender: "assistant",
-          text: "Sorry, I could not generate a reply."
+          text: errorMessage,
+          isError: true,
+          created_at: new Date().toISOString()
         }
       ]);
+      setError(errorMessage);
+      try {
+        await refreshConversations(activeConvo);
+      } catch (refreshError) {
+        console.error("Failed to refresh conversations:", refreshError);
+      }
     } finally {
-      setIsLoading(false);
+      if (activeSendRequestRef.current === requestId) {
+        setIsSending(false);
+        setIsTyping(false);
+        textareaRef.current?.focus();
+      }
     }
   };
 
@@ -133,172 +380,315 @@ function Chat() {
     window.location.href = "/";
   };
 
+  const handleTextareaKeyDown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (!isSending) {
+        sendMessage();
+      }
+    }
+  };
+
+  const renderMessageContent = (text) => {
+    const segments = text.split(/```/);
+
+    return segments.map((segment, index) => {
+      const key = `${index}-${segment.slice(0, 12)}`;
+
+      if (index % 2 === 1) {
+        return (
+          <pre key={key} className="chat-code-block">
+            <code>{segment.replace(/^\w+\n/, "")}</code>
+          </pre>
+        );
+      }
+
+      return (
+        <p key={key} className="chat-message-text">
+          {segment}
+        </p>
+      );
+    });
+  };
+
   return (
-    <div className="chat-layout">
+    <div className="app-shell app-shell-chat">
       {isSidebarOpen && (
-        <div
+        <button
+          type="button"
           className="chat-overlay"
+          aria-label="Close conversation menu"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
-      <div
-        className={`chat-sidebar ${
-          isSidebarOpen ? "open" : ""
-        }`}
-        style={{
-          minWidth: 260
-        }}
+
+      <aside
+        id="conversation-sidebar"
+        className={`chat-sidebar ${isSidebarOpen ? "open" : ""}`}
+        aria-label="Conversation history"
       >
-        <h3 className="chat-sidebar-title">
-          Conversations
-        </h3>
+        <div className="chat-sidebar-top">
+          <div>
+            <p className="eyebrow">Workspace</p>
+            <h1 className="chat-sidebar-title">AI Coding Mentor</h1>
+          </div>
 
-        <div className="chat-conversation-list">
-          {conversations.map((c) => (
-            <div
-              key={c.conversation_id}
-              onClick={() => loadConversation(c.conversation_id)}
-              style={{
-                padding: 10,
-                marginBottom: 8,
-                borderRadius: 6,
-                cursor: "pointer",
-                background:
-                  activeConvo === c.conversation_id ? "#374151" : "transparent"
-              }}
-            >
-              {c.title || `Conversation ${c.conversation_id}`}
-            </div>
-          ))}
-        </div>
-
-        <button
-          onClick={logout}
-          style={{
-            marginTop: 12,
-            padding: 10,
-            background: "#ef4444",
-            border: "none",
-            color: "#fff",
-            borderRadius: 6,
-            cursor: "pointer"
-          }}
-        >
-          Logout
-        </button>
-      </div>
-
-      <div className="chat-main">
-        <div className="chat-main-header">
-          <button
-            className="chat-menu-btn"
-            onClick={() =>
-              setIsSidebarOpen((prev) => !prev)
-            }
-          >
-            Menu
+          <button type="button" className="ghost-button" onClick={logout}>
+            Logout
           </button>
-          <h2>AI Coding Mentor</h2>
         </div>
 
-        <div className="chat-box">
-          {chat.map((m, i) => {
-            const isUser = m.sender === "user";
+        <div className="chat-sidebar-card">
+          <div>
+            <p className="sidebar-kicker">Today&apos;s focus</p>
+            <h2>Ship questions faster with a cleaner learning flow.</h2>
+          </div>
 
-            return (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  justifyContent: isUser
-                    ? "flex-end"
-                    : "flex-start",
-                  marginBottom: 10
-                }}
-              >
+          <button
+            type="button"
+            className="primary-button"
+            onClick={startNewConversation}
+            disabled={isSending}
+          >
+            New Conversation
+          </button>
+        </div>
+
+        <div className="chat-sidebar-section">
+          <div className="chat-sidebar-section-header">
+            <span>Conversations</span>
+            <span className="sidebar-pill">{conversations.length}</span>
+          </div>
+
+          {isFetchingConvos && (
+            <div className="conversation-empty-state muted" aria-live="polite">
+              Loading your conversation history...
+            </div>
+          )}
+
+          {!isFetchingConvos && conversations.length === 0 && (
+            <div className="conversation-empty-state">
+              No saved conversations yet. Start one from the button above.
+            </div>
+          )}
+
+          <div className="chat-conversation-list">
+            {conversations.map((conversation) => {
+              const isActive = activeConvo === conversation.conversation_id;
+              const isDeleting = pendingDeleteId === conversation.conversation_id;
+
+              return (
                 <div
-                  style={{
-                    display: "flex",
-                    flexDirection: isUser
-                      ? "row-reverse"
-                      : "row",
-                    alignItems: "flex-end",
-                    gap: 8,
-                    maxWidth: "80%"
-                  }}
+                  key={conversation.conversation_id}
+                  className={`conversation-item ${isActive ? "active" : ""}`}
                 >
-                  <img
-                    src={
-                      isUser
-                        ? "https://api.dicebear.com/7.x/initials/svg?seed=User"
-                        : "https://api.dicebear.com/7.x/bottts/svg?seed=Mentor"
-                    }
-                    alt={
-                      isUser
-                        ? "User avatar"
-                        : "AI avatar"
-                    }
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: "50%",
-                      objectFit: "cover",
-                      flexShrink: 0
-                    }}
-                  />
-
-                  <div
-                    style={{
-                      padding: "10px 14px",
-                      borderRadius: 12,
-                      background: isUser
-                        ? "#2563eb"
-                        : "#e5e7eb",
-                      color: isUser ? "#fff" : "#000",
-                      maxWidth: "70%",
-                      wordBreak: "break-word"
-                    }}
+                  <button
+                    type="button"
+                    className="conversation-open"
+                    onClick={() => loadConversation(conversation.conversation_id)}
+                    aria-current={isActive ? "page" : undefined}
                   >
-                    {m.text}
-                  </div>
+                    <span className="conversation-copy">
+                      <span className="conversation-title">
+                        {conversation.title}
+                      </span>
+                      <span className="conversation-meta">
+                        Updated {formatTimestamp(conversation.updated_at)}
+                      </span>
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="conversation-delete"
+                    aria-label={`Delete ${conversation.title}`}
+                    disabled={isDeleting}
+                    onClick={() => deleteConversation(conversation.conversation_id)}
+                  >
+                    {isDeleting ? "..." : "x"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </aside>
+
+      <main className="chat-main">
+        <header className="chat-main-header">
+          <div className="chat-header-leading">
+            <button
+              type="button"
+              className="chat-menu-btn"
+              onClick={() => setIsSidebarOpen((prev) => !prev)}
+              aria-expanded={isSidebarOpen}
+              aria-controls="conversation-sidebar"
+            >
+              Menu
+            </button>
+
+            <div>
+              <p className="eyebrow">Active thread</p>
+              <h2>{activeTitle}</h2>
+            </div>
+          </div>
+
+          <div className="chat-header-stats">
+            <div className="header-stat">
+              <span className="header-stat-value">{chat.length}</span>
+              <span className="header-stat-label">Messages</span>
+            </div>
+            <div className="header-stat">
+              <span className="header-stat-value">{conversations.length}</span>
+              <span className="header-stat-label">Threads</span>
+            </div>
+            <div className={`header-status ${isTyping ? "typing" : ""}`}>
+              {isLoadingConversation
+                ? "Loading thread"
+                : isTyping
+                ? "Mentor is typing"
+                : isSending
+                ? "Sending"
+                : "Ready"}
+            </div>
+          </div>
+        </header>
+
+        {error && (
+          <div className="chat-alert" role="alert">
+            <span>{error}</span>
+            <button
+              type="button"
+              className="chat-alert-close"
+              onClick={() => setError(null)}
+              aria-label="Dismiss error message"
+            >
+              x
+            </button>
+          </div>
+        )}
+
+        <section className="chat-board" aria-busy={isLoadingConversation}>
+          {isLoadingConversation && (
+            <div className="chat-panel-state" aria-live="polite">
+              Loading this conversation...
+            </div>
+          )}
+
+          {!isLoadingConversation && chat.length === 0 ? (
+            <div className="chat-empty-state">
+              <div className="chat-empty-panel">
+                <p className="eyebrow">Start here</p>
+                <h3>Ask for an explanation, a debugging hand, or a study plan.</h3>
+                <p>
+                  The mentor keeps context inside the active conversation, so
+                  each thread can stay focused on one problem at a time.
+                </p>
+
+                <div className="starter-grid">
+                  {starterPrompts.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      className="starter-card"
+                      onClick={() => sendMessage(prompt)}
+                      disabled={isSending}
+                    >
+                      {prompt}
+                    </button>
+                  ))}
                 </div>
               </div>
-            );
-          })}
+            </div>
+          ) : !isLoadingConversation ? (
+            <div className="chat-stream">
+              {chat.map((entry) => {
+                const isUser = entry.sender === "user";
+
+                return (
+                  <article
+                    key={entry.id}
+                    className={`chat-message-row ${isUser ? "user" : "assistant"}`}
+                  >
+                    <div
+                      className={`chat-avatar ${isUser ? "user" : "assistant"}`}
+                      aria-hidden="true"
+                    >
+                      {isUser ? "You" : "AI"}
+                    </div>
+
+                    <div
+                      className={`chat-bubble ${
+                        isUser ? "user" : "assistant"
+                      } ${entry.isError ? "error" : ""}`}
+                    >
+                      <div className="chat-bubble-meta">
+                        <span className="chat-bubble-label">
+                          {isUser ? "You" : entry.isError ? "Mentor error" : "Mentor"}
+                        </span>
+                        <span className="chat-bubble-time">
+                          {formatTimestamp(entry.created_at)}
+                        </span>
+                      </div>
+                      {renderMessageContent(entry.text)}
+                    </div>
+                  </article>
+                );
+              })}
+
+              {isTyping && (
+                <div className="typing-indicator" aria-live="polite">
+                  <span className="typing-dot" />
+                  <span className="typing-dot" />
+                  <span className="typing-dot" />
+                  <span>Composing a response...</span>
+                </div>
+              )}
+            </div>
+          ) : null}
+
           <div ref={chatEndRef} />
-        </div>
+        </section>
 
-        <div className="chat-input-bar">
-          <input
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") sendMessage();
-            }}
-            placeholder="Ask something..."
-            style={{
-              padding: 12,
-              borderRadius: 8,
-              border: "1px solid #ccc"
-            }}
-          />
+        <form
+          className="chat-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            sendMessage();
+          }}
+        >
+          <div className="chat-composer-shell">
+            <textarea
+              ref={textareaRef}
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              onKeyDown={handleTextareaKeyDown}
+              placeholder={
+                isSending
+                  ? "Sending your question..."
+                  : "Ask about a bug, concept, or next step. Shift+Enter adds a line."
+              }
+              disabled={isSending}
+              rows={1}
+              className="chat-textarea"
+              aria-label="Message composer"
+            />
 
-          <button
-            onClick={sendMessage}
-            disabled={isLoading}
-            style={{
-              padding: "12px 18px",
-              background: isLoading ? "#93c5fd" : "#2563eb",
-              color: "#fff",
-              border: "none",
-              borderRadius: 8,
-              cursor: isLoading ? "not-allowed" : "pointer"
-            }}
-          >
-            {isLoading ? "Sending..." : "Send"}
-          </button>
-        </div>
-      </div>
+            <button
+              type="submit"
+              className="send-button"
+              disabled={isSending || !message.trim()}
+            >
+              {isSending ? "Sending..." : "Send"}
+            </button>
+          </div>
+
+          <div className="chat-composer-footer">
+            <span>Enter to send</span>
+            <span>Shift + Enter for a new line</span>
+          </div>
+        </form>
+      </main>
     </div>
   );
 }

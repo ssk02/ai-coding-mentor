@@ -1,102 +1,34 @@
 import { useState } from "react";
-import API, { setAuthToken } from "../services/api";
 import { Link, useNavigate } from "react-router-dom";
-
-const styles = {
-  wrapper: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    height: "100vh",
-    background: "#f4f6f8",
-    padding: "16px"
-  },
-  card: {
-    background: "#fff",
-    padding: "30px",
-    borderRadius: "12px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-    width: "100%",
-    maxWidth: "350px"
-  },
-  title: {
-    marginBottom: "20px",
-    textAlign: "center",
-    color: "#111827"
-  },
-  input: {
-    width: "100%",
-    padding: "12px",
-    marginBottom: "15px",
-    borderRadius: "8px",
-    border: "1px solid #d1d5db",
-    outline: "none",
-    fontSize: "14px"
-  },
-  button: {
-    width: "100%",
-    padding: "12px",
-    background: "#2563eb",
-    color: "#fff",
-    border: "none",
-    borderRadius: "8px",
-    fontWeight: "bold",
-    cursor: "pointer"
-  },
-  buttonHover: {
-    background: "#1d4ed8"
-  },
-  buttonDisabled: {
-    background: "#93c5fd",
-    cursor: "not-allowed"
-  },
-  footerText: {
-    marginTop: "15px",
-    textAlign: "center",
-    fontSize: "14px"
-  },
-  link: {
-    color: "#2563eb",
-    textDecoration: "none"
-  },
-  errorBox: {
-    background: "#fee2e2",
-    color: "#991b1b",
-    padding: "10px",
-    borderRadius: "6px",
-    marginBottom: "15px"
-  }
-};
+import API, { setAuthToken } from "../services/api";
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [hovered, setHovered] = useState(false);
-  const [focusedField, setFocusedField] = useState("");
   const navigate = useNavigate();
 
   const isFormValid = email.trim() && password.trim();
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  const handleLogin = async (event) => {
+    event.preventDefault();
+
     if (!isFormValid || isLoading) return;
 
     setError("");
     setIsLoading(true);
 
     try {
-      const res = await API.post("/auth/login", {
+      const response = await API.post("/auth/login", {
         email,
         password
       });
 
-      const token = res.data.token;
+      const token = response.data.token;
 
       localStorage.setItem("token", token);
       setAuthToken(token);
-
       navigate("/chat");
     } catch {
       setError("Invalid email or password.");
@@ -106,78 +38,81 @@ function Login() {
   };
 
   return (
-    <div style={styles.wrapper}>
-      <div style={styles.card}>
-        <h2 style={styles.title}>Welcome Back</h2>
+    <div className="app-shell app-shell-auth">
+      <div className="auth-backdrop" />
 
-        {error && <div style={styles.errorBox}>{error}</div>}
+      <div className="auth-layout">
+        <section className="auth-hero">
+          <div>
+            <p className="eyebrow">AI Coding Mentor</p>
+            <h1>Learn with a workspace that feels focused.</h1>
+            <p>
+              Ask coding questions, keep conversations organized, and get help
+              that matches the pace of your learning.
+            </p>
+          </div>
 
-        <form onSubmit={handleLogin}>
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleLogin(e);
-            }}
-            onFocus={() => setFocusedField("email")}
-            onBlur={() => setFocusedField("")}
-            required
-            style={{
-              ...styles.input,
-              borderColor:
-                focusedField === "email"
-                  ? "#2563eb"
-                  : "#d1d5db"
-            }}
-          />
+          <div className="auth-highlights">
+            <div className="auth-highlight">
+              <strong>Persistent threads</strong>
+              <span>Keep one conversation per topic so your progress stays easy to revisit.</span>
+            </div>
+            <div className="auth-highlight">
+              <strong>Guided replies</strong>
+              <span>Get explanations, debugging help, and practical next steps in one place.</span>
+            </div>
+          </div>
+        </section>
 
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleLogin(e);
-            }}
-            onFocus={() => setFocusedField("password")}
-            onBlur={() => setFocusedField("")}
-            required
-            style={{
-              ...styles.input,
-              borderColor:
-                focusedField === "password"
-                  ? "#2563eb"
-                  : "#d1d5db"
-            }}
-          />
+        <section className="auth-card">
+          <div className="auth-card-header">
+            <p className="eyebrow">Welcome back</p>
+            <h2>Sign in</h2>
+            <p>Continue where your last mentoring session left off.</p>
+          </div>
 
-          <button
-            type="submit"
-            disabled={!isFormValid || isLoading}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-            style={{
-              ...styles.button,
-              ...(hovered && isFormValid && !isLoading
-                ? styles.buttonHover
-                : {}),
-              ...(!isFormValid || isLoading
-                ? styles.buttonDisabled
-                : {})
-            }}
-          >
-            {isLoading ? "Please wait..." : "Login"}
-          </button>
-        </form>
+          <form className="auth-form" onSubmit={handleLogin}>
+            {error && <div className="feedback-banner error">{error}</div>}
 
-        <p style={styles.footerText}>
-          Don't have an account? {" "}
-          <Link to="/register" style={styles.link}>
-            Register
-          </Link>
-        </p>
+            <div className="auth-field">
+              <label htmlFor="login-email">Email</label>
+              <input
+                id="login-email"
+                type="email"
+                className="auth-input"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+            </div>
+
+            <div className="auth-field">
+              <label htmlFor="login-password">Password</label>
+              <input
+                id="login-password"
+                type="password"
+                className="auth-input"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="primary-button auth-submit"
+              disabled={!isFormValid || isLoading}
+            >
+              {isLoading ? "Signing in..." : "Login"}
+            </button>
+          </form>
+
+          <p className="auth-footer">
+            Don&apos;t have an account? <Link to="/register">Register</Link>
+          </p>
+        </section>
       </div>
     </div>
   );

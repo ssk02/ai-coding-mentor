@@ -7,7 +7,7 @@ exports.register = async (req, res) => {
         const { full_name, email, password, skill_level, preferred_language } = req.body;
 
         if (!full_name || !email || !password || !preferred_language) {
-            return res.status(400).json({ message: "Missing required fields" });
+            return res.status(400).json({ error: "Missing required fields" });
         }
 
         const [existing] = await pool.execute(
@@ -16,7 +16,7 @@ exports.register = async (req, res) => {
         );
 
         if (existing.length) {
-            return res.status(409).json({ message: "Email already registered" });
+            return res.status(409).json({ error: "Email already registered" });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -37,8 +37,8 @@ exports.register = async (req, res) => {
         res.status(201).json({ message: "User registered successfully" });
 
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Server error" });
+        console.error("Registration error:", err);
+        res.status(500).json({ error: "Registration failed. Please try again." });
     }
 };
 
@@ -47,7 +47,7 @@ exports.login = async (req, res) => {
         const { email, password } = req.body;
 
         if (!email || !password) {
-            return res.status(400).json({ message: "Missing credentials" });
+            return res.status(400).json({ error: "Missing credentials" });
         }
 
         const [users] = await pool.execute(
@@ -56,14 +56,14 @@ exports.login = async (req, res) => {
         );
 
         if (!users.length) {
-            return res.status(401).json({ message: "Invalid email or password" });
+            return res.status(401).json({ error: "Invalid email or password" });
         }
 
         const user = users[0];
         const isMatch = await bcrypt.compare(password, user.password_hash);
 
         if (!isMatch) {
-            return res.status(401).json({ message: "Invalid email or password" });
+            return res.status(401).json({ error: "Invalid email or password" });
         }
 
         const token = jwt.sign(
@@ -75,7 +75,7 @@ exports.login = async (req, res) => {
         res.json({ token });
 
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Server error" });
+        console.error("Login error:", err);
+        res.status(500).json({ error: "Login failed. Please try again." });
     }
 };
